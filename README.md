@@ -152,21 +152,18 @@ This guarantees that Terraform-managed infrastructure updates write directly to 
 Build & Deployment Sequence
 1. Machine Image Creation:
 ```
-Bash
 packer init packer/portal-ami.pkr.hcl
 packer build packer/portal-ami.pkr.hcl
 ```
 2. Infrastructure Provisioning:
 ```
-Bash
-terraform -chdir=terraform init
-terraform -chdir=terraform plan -out=tfplan
-terraform -chdir=terraform apply tfplan
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
 ```
 3. Environment Destruction:
 ```
-Bash
-terraform -chdir=terraform destroy -auto-approve
+terraform destroy -auto-approve
 ```
 
 - Terraform successfully destroyed all 67 resources under Terraform management. Resources created outside of Terraform, including Packer-generated AMIs and associated snapshots, were identified and removed seperately, reinforcing the importance of defining ownership and lifecycle management for resources created by different tooling.
