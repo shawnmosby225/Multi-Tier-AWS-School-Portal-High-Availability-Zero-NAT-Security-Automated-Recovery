@@ -1,0 +1,5 @@
+# Lab/development configuration.
+# Set to true for the intended production Multi-AZ architecture.
+
+db_multi_az = false
+alert_email = "your-email@example.com"

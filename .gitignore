@@ -1,0 +1,37 @@
+# Terraform local state
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Terraform plan files
+*.tfplan
+tfplan
+
+# Terraform crash logs
+crash.log
+crash.*.log
+
+# Terraform variable files
+*.tfvars
+*.tfvars.json
+
+# Local override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Packer artifacts
+packer_cache/
+*.box
+
+# macOS
+.DS_Store
+._*
+__MACOSX/
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
