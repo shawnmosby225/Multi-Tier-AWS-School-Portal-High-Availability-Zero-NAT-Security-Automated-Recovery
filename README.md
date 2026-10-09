@@ -57,69 +57,69 @@ Workloads communicate through strict security group chaining rather than CIDR bl
 - **IAM Instance Profile:** Allows read-only access to `/school-portal/database/endpoint` in Parameter Store and `secretsmanager:GetSecretValue` against the specific database credentials secret ARN.
 
 ## Tradeoffs & Core Engineering Decisions
-- Dimension: OS Provisioning
-- Selected Approach: Packer Golden AMI + ASG Instance Refresh
-- Alternative Considered: User-data bootstrap scripts on base AMI
-- Technical Justification: Eliminates runtime failures caused by external apt repository latency, upstream network timeouts, and variable startup times during auto-scaling events.
+### 1. Dimension: OS Provisioning
+- **Selected Approach:** Packer Golden AMI + ASG Instance Refresh
+- **Alternative Considered:** User-data bootstrap scripts on base AMI
+- **Technical Justification:** Eliminates runtime failures caused by external apt repository latency, upstream network timeouts, and variable startup times during auto-scaling events.
 
-- Dimension: Runtime Egress
-- Selected Approach: Interface VPC Endpoints (PrivateLink)
-- Alternative Considered: Managed NAT Gateways
-- Technical Justification: Prevents instances from possessing an outbound path to the public internet, limiting malware exfiltration paths while fulfilling AWS API communication needs.
+### 2. Dimension: Runtime Egress
+- **Selected Approach:** Interface VPC Endpoints (PrivateLink)
+- **Alternative Considered:** Managed NAT Gateways
+- **Technical Justification:** Prevents instances from possessing an outbound path to the public internet, limiting malware exfiltration paths while fulfilling AWS API communication needs.
 
-- Dimension: Relational Database
-- Selected Approach: Standard Amazon RDS for MySQL
-- Alternative Considered: Amazon Aurora MySQL
-- Technical Justification: Workload profile (~8,000 students, read/write patterns centered on scheduled windows) did not require Aurora-specific scaling or performance capabilities. Standard RDS Multi-AZ satisfied the project's availability, backup, recovery, and cost requirements. The PITR exercise met the 15-minute RPO target; the 60-minute RTO remained a design objective and was not formally measured.
+### 3. Dimension: Relational Database
+- **Selected Approach:** Standard Amazon RDS for MySQL
+- **Alternative Considered:** Amazon Aurora MySQL
+- **Technical Justification:** Workload profile (~8,000 students, read/write patterns centered on scheduled windows) did not require Aurora-specific scaling or performance capabilities. Standard RDS Multi-AZ satisfied the project's availability, backup, recovery, and cost requirements. The PITR exercise met the 15-minute RPO target; the 60-minute RTO remained a design objective and was not formally measured.
 
-- Dimension: Secret Ingestion
-- Selected Approach: Parameter Store + Secrets Manager
-- Alternative Considered: Environment variables hardcoded in Terraform
-- Techincal Justification: Separates endpoint discovery (where the service lives) from authentication (how to log in). Prevents sensitive database credentials from being stored in plaintext in version control or Terraform state files.
+### 4. Dimension: Secret Ingestion
+- **Selected Approach:** Parameter Store + Secrets Manager
+- **Alternative Considered:** Environment variables hardcoded in Terraform
+- **Techincal Justification:** Separates endpoint discovery (where the service lives) from authentication (how to log in). Prevents sensitive database credentials from being stored in plaintext in version control or Terraform state files.
 
-- Dimension: DNS Provider
-- Selected Approach: Google Cloud DNS
-- Alternative Considered: AWS Route 53
-- Technical Justification: Implements cross-provider separation of concerns: authoritative DNS delegation remains separate from the cloud compute provider hosting the workload.
+### 5. Dimension: DNS Provider
+- **Selected Approach:** Google Cloud DNS
+- **Alternative Considered:** AWS Route 53
+- **Technical Justification:** Implements cross-provider separation of concerns: authoritative DNS delegation remains separate from the cloud compute provider hosting the workload.
 
 ## Verification & Resilience Testing
 
 - The architecture was validated via intentional failure injection, traffic generation, and data recovery drills:
 
-- Test Objective: Instance Self-Healing
-- Methodology: Manually terminated an active EC2 instance via AWS CLI.
-- Observed Result: ASG detected the capacity loss and launched a replacement instance, eventually restoring the two-instance fleet.
-- Operational Finding: Healthy remaining targets continued serving application traffic during replacement.
+### Test Objective: Instance Self-Healing
+- **Methodology:** Manually terminated an active EC2 instance via AWS CLI.
+- **Observed Result:** ASG detected the capacity loss and launched a replacement instance, eventually restoring the two-instance fleet.
+- **Operational Finding:** Healthy remaining targets continued serving application traffic during replacement.
 
-- Test Objective: Application Process Fault
-- Methodology: Stopped `nginx` systemd process on instance A via SSM Session Manager.
-- Observed Result: `/health` check returned `502`/timeout; ALB stopped routing traffic to target A; ASG ELB health-check logic terminated and replaced target A.
-- Operational Finding: Verified that ALB process monitoring catches dead web servers that still pass EC2 hypervisor checks.
+### Test Objective: Application Process Fault
+- **Methodology:** Stopped `nginx` systemd process on instance A via SSM Session Manager.
+- **Observed Result:** `/health` check returned `502`/timeout; ALB stopped routing traffic to target A; ASG ELB health-check logic terminated and replaced target A.
+- **Operational Finding:** Verified that ALB process monitoring catches dead web servers that still pass EC2 hypervisor checks.
 
-- Test Objective: Horizontal Auto-Scaling
-- Methodology: Injected ~2,500 requests across 2 targets using synthetic traffic generation.
-- Observed Result: Traffic exceeded the 1,000 req/target target-tracking policy (~1,250 req/target); ASG scaled out from 2 to 3 instances; average target load settled to ~833 req/target.
-- Operational Finding: Capacity scales based on measured application demand rather than CPU utilization alone.
+### Test Objective: Horizontal Auto-Scaling
+- **Methodology:** Injected ~2,500 requests across 2 targets using synthetic traffic generation.
+- **Observed Result:** Traffic exceeded the 1,000 req/target target-tracking policy (~1,250 req/target); ASG scaled out from 2 to 3 instances; average target load settled to ~833 req/target.
+- **Operational Finding:** Capacity scales based on measured application demand rather than CPU utilization alone.
 
-- Test Objective: Zero-Downtime Rollout
-- Methodology: Built updated Packer AMI; updated Launch Template; executed ASG Instance Refresh.
-- Observed Result: ASG brought up new instances, awaited target group /health HTTP 200, then replaced the legacy instances. Continuous application requests returned HTTP 200 throughout the observed rollout.
-- Operational Finding: Demonstrated an immutable rolling deployment with no observed application downtime.
+### Test Objective: Zero-Downtime Rollout
+- **Methodology:** Built updated Packer AMI; updated Launch Template; executed ASG Instance Refresh.
+- **Observed Result:** ASG brought up new instances, awaited target group /health HTTP 200, then replaced the legacy instances. Continuous application requests returned HTTP 200 throughout the observed rollout.
+- **Operational Finding:** Demonstrated an immutable rolling deployment with no observed application downtime.
 
-- Test Objective: No-NAT Egress Isolation
-- Methodology: Stripped default 0.0.0.0/0 route in private subnets; attempted `curl [https://amazon.com](https://amazon.com)`.
-- Observed Result: Public internet connectivity failed as expected. Simultaneously, SSM Session Manager and Secrets Manager API calls functioned normally over Interface Endpoints.
-- Operational Finding: Validated complete runtime isolation from the public internet.
+### Test Objective: No-NAT Egress Isolation
+- **Methodology:** Stripped default 0.0.0.0/0 route in private subnets; attempted `curl [https://amazon.com](https://amazon.com)`.
+- **Observed Result:** Public internet connectivity failed as expected. Simultaneously, SSM Session Manager and Secrets Manager API calls functioned normally over Interface Endpoints.
+- **Operational Finding:** Validated complete runtime isolation from the public internet.
 
-- Test Objective: WAF Layer 7 Mitigation
-- Methodology: Sent HTTP requests containing script injection strings (`<script>alert(1)</script>`) and rapid HTTP bursts.
-- Observed Result: Injections returned HTTP `403 Forbidden` via AWS Common Rule Set; traffic bursts exceeding rate threshold were dropped before requests reached the application targets.
-- Operational Finding: Layer 7 malicious payloads are halted before reaching the EC2 application targets.
+### Test Objective: WAF Layer 7 Mitigation
+- **Methodology:** Sent HTTP requests containing script injection strings (`<script>alert(1)</script>`) and rapid HTTP bursts.
+- **Observed Result:** Injections returned HTTP `403 Forbidden` via AWS Common Rule Set; traffic bursts exceeding rate threshold were dropped before requests reached the application targets.
+- **Operational Finding:** Layer 7 malicious payloads are halted before reaching the EC2 application targets.
 
-- Test Objective: Point-in-Time Recovery
-- Methodology: Simulated table deletion at `00:27:24 UTC`; initiated RDS PITR targeting `00:24:00 UTC`.
-- Observed Result: Restored functional database instance within an actual data recovery point delta of 3m 24s (satisfying the 15-minute RPO target).
-- Operational Finding: Parameter Store endpoint was updated to point to the newly restored RDS instance.
+### Test Objective: Point-in-Time Recovery
+- **Methodology:** Simulated table deletion at `00:27:24 UTC`; initiated RDS PITR targeting `00:24:00 UTC`.
+- **Observed Result:** Restored functional database instance within an actual data recovery point delta of 3m 24s (satisfying the 15-minute RPO target).
+- **Operational Finding:** Parameter Store endpoint was updated to point to the newly restored RDS instance.
 
 ## Production Troubleshooting & Root Cause Analysis
 
@@ -153,8 +153,8 @@ Build & Deployment Sequence
 1. Machine Image Creation:
 ```
 Bash
-packer init packer/school-portal.pkr.hcl
-packer build packer/school-portal.pkr.hcl
+packer init packer/portal-ami.pkr.hcl
+packer build packer/portal-ami.pkr.hcl
 ```
 2. Infrastructure Provisioning:
 ```
